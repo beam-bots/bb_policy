@@ -70,6 +70,9 @@ defmodule BB.Policy.MixProject do
         Core: [
           BB.Policy
         ],
+        Implementations: [
+          BB.Policy.ONNX
+        ],
         Support: [
           BB.Policy.ActuatorCommand,
           BB.Policy.Normalizer,
@@ -88,6 +91,7 @@ defmodule BB.Policy.MixProject do
     [
       {:bb, bb_dep("~> 0.20")},
       {:nx, "~> 0.12"},
+      ortex_dep(),
 
       # dev/test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
@@ -110,6 +114,19 @@ defmodule BB.Policy.MixProject do
       "local" -> [path: "../bb", override: true]
       "main" -> [git: "https://github.com/beam-bots/bb.git", override: true]
       version -> "~> #{version}"
+    end
+  end
+
+  # ortex compiles a Rust NIF (and downloads an onnxruntime binary), so it needs
+  # a Rust toolchain. It is published as an optional dependency — consumers opt
+  # in — but is only fetched into *this* repo's build when ORTEX=1, so day-to-day
+  # development and CI don't require Rust. BB.Policy.ONNX guards on its presence
+  # at runtime via Code.ensure_loaded?/1.
+  defp ortex_dep do
+    if System.get_env("ORTEX") in ~w(1 true) do
+      {:ortex, "~> 0.1", optional: true}
+    else
+      {:ortex, "~> 0.1", optional: true, only: :__ortex_disabled__}
     end
   end
 end
