@@ -75,6 +75,9 @@ defmodule BB.Policy do
   @typedoc "Opaque, implementation-private policy state threaded through callbacks."
   @type state :: term()
 
+  @typedoc "Goal/task specification passed to the runner, forwarded to the policy via `t:state/0`."
+  @type goal :: term()
+
   @doc """
   Initialise the policy.
 
@@ -138,4 +141,21 @@ defmodule BB.Policy do
   @callback info(state()) :: map()
 
   @optional_callbacks [info: 1]
+
+  @doc """
+  Run a policy on `robot` until completion, timeout, or safety intervention.
+
+  This is the package's imperative entry point. It delegates to
+  `BB.Policy.Runner.run/4`; see that function for options.
+
+      {:ok, result} =
+        BB.Policy.run(MyRobot, BB.Policy.ONNX, %{task: :pick_mug},
+          policy_opts: [model: "priv/models/pick_mug.onnx"],
+          rate_hz: 20,
+          timeout: :timer.seconds(30)
+        )
+  """
+  @spec run(robot :: module(), policy :: module(), goal(), keyword()) ::
+          {:ok, term()} | {:error, term()}
+  defdelegate run(robot, policy_module, goal, opts \\ []), to: BB.Policy.Runner
 end
