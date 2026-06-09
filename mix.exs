@@ -1,12 +1,13 @@
-# SPDX-FileCopyrightText: 2026 James Harton
+# SPDX-FileCopyrightText: 2026 James Harton <james@harton.nz>
+# SPDX-FileCopyrightText: 2026 Edgar Gomes de Araujo <talktoedgar@gmail.com>
 #
 # SPDX-License-Identifier: Apache-2.0
 
-defmodule Bb.Policy.MixProject do
+defmodule BB.Policy.MixProject do
   use Mix.Project
 
   @moduledoc """
-  Leaned behaviour execution for the Beam Bots framework.
+  Learned policies for Beam Bots: map observations to actions via ONNX models.
   """
 
   @version "0.1.0"
@@ -32,8 +33,14 @@ defmodule Bb.Policy.MixProject do
 
   defp package do
     [
-      maintainers: ["James Harton <james@harton.nz>"],
+      maintainers: [
+        "Edgar Gomes de Araujo <talktoedgar@gmail.com>",
+        "James Harton <james@harton.nz>"
+      ],
       licenses: ["Apache-2.0"],
+      # Explicit allowlist so the dev-only Nerves harness in test_firmware/ (and
+      # other non-library files) never ships in the published tarball.
+      files: ~w(lib documentation .formatter.exs mix.exs README.md CHANGELOG.md LICENSES),
       links: %{
         "Source" => "https://github.com/beam-bots/bb_policy",
         "Sponsor" => "https://github.com/sponsors/jimsynz"
@@ -41,7 +48,6 @@ defmodule Bb.Policy.MixProject do
     ]
   end
 
-  # Run "mix help compile.app" to learn about applications.
   def application do
     [
       extra_applications: [:logger]
@@ -52,7 +58,25 @@ defmodule Bb.Policy.MixProject do
     [
       main: "readme",
       logo: "assets/logo.png",
-      extras: ["README.md"],
+      extras:
+        ["README.md", "CHANGELOG.md"]
+        |> Enum.concat(Path.wildcard("documentation/**/*.{md,livemd,cheatmd}")),
+      groups_for_extras: [
+        Tutorials: ~r/tutorials\//,
+        "How-to Guides": ~r/how-to\//,
+        Explanation: ~r/topics\//
+      ],
+      groups_for_modules: [
+        Core: [
+          BB.Policy
+        ],
+        Support: [
+          BB.Policy.ActuatorCommand,
+          BB.Policy.Normalizer,
+          BB.Policy.Step,
+          BB.Policy.Telemetry
+        ]
+      ],
       source_ref: "main",
       source_url: "https://github.com/beam-bots/bb_policy"
     ]
@@ -63,15 +87,16 @@ defmodule Bb.Policy.MixProject do
   defp deps do
     [
       {:bb, bb_dep("~> 0.20")},
+      {:nx, "~> 0.12"},
 
       # dev/test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:doctor, "~> 0.23", only: [:dev, :test], runtime: false},
       {:ex_check, "~> 0.16", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:git_ops, "~> 2.9", only: [:dev, :test], runtime: false},
       {:igniter, "~> 0.6", only: [:dev, :test], runtime: false},
+      {:mimic, "~> 2.2", only: :test, runtime: false},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false}
     ]
   end
