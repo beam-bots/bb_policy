@@ -1,4 +1,5 @@
-# SPDX-FileCopyrightText: 2026 James Harton
+# SPDX-FileCopyrightText: 2026 James Harton <james@harton.nz>
+# SPDX-FileCopyrightText: 2026 Edgar Gomes de Araujo <talktoedgar@gmail.com>
 #
 # SPDX-License-Identifier: Apache-2.0
 
@@ -14,9 +15,6 @@
 # Where third-party dependencies like ExDoc output generated docs.
 /doc/
 
-# Temporary files, for example, from tests.
-/tmp/
-
 # If the VM crashes, it generates a dump, let's ignore it too.
 erl_crash.dump
 
@@ -26,3 +24,16 @@ erl_crash.dump
 # Ignore package tarball (built via "mix hex.build").
 bb_policy-*.tar
 
+# Temporary files, for example, from tests.
+/tmp/
+
+# ONNX models are large; keep them out of git by default. The tiny generated
+# test fixture is the deliberate exception (see test/fixtures/generate_linear.py).
+*.onnx
+!test/fixtures/*.onnx
+!examples/bb_policy_firmware/priv/models/*.onnx
+
+# direnv / nix dev shell (flake.lock IS committed for reproducibility).
+.direnv/
+
+.claude
