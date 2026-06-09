@@ -1,0 +1,20 @@
+## SPDX-FileCopyrightText: 2026 Edgar Gomes de Araujo <talktoedgar@gmail.com>
+##
+## SPDX-License-Identifier: Apache-2.0
+
+## Customize flags given to the VM: https://www.erlang.org/doc/man/erl.html
+## -mode/-name/-sname/-setcookie are configured via env vars, see rel/env.sh.eex
+
+## Number of dirty schedulers doing IO work (file, sockets, and others)
+##+SDio 5
+
+## Increase number of concurrent ports/sockets
+##+Q 65536
+
+## Tweak GC to run more often
+##-env ERL_FULLSWEEP_AFTER 10
+
+# Enable shell history
+-kernel shell_history enabled
+
+# Disable the heartbeat — nerves_runtime handles supervision/restart.

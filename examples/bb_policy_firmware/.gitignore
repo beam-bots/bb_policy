@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2026 Edgar Gomes de Araujo <talktoedgar@gmail.com>
+#
+# SPDX-License-Identifier: Apache-2.0
+/_build/
+/deps/
+/.nerves/
+*.fw
+*.img
+
+# Nerves convenience symlinks created in the project root during builds
+/bb_policy_firmware
+/nerves
+/ortex
