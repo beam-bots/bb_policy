@@ -68,7 +68,10 @@ defmodule BB.Policy.MixProject do
       ],
       groups_for_modules: [
         Core: [
-          BB.Policy
+          BB.Policy,
+          BB.Policy.Runner,
+          BB.Policy.Command,
+          BB.Policy.Controller
         ],
         Implementations: [
           BB.Policy.ONNX
@@ -92,6 +95,10 @@ defmodule BB.Policy.MixProject do
       {:bb, bb_dep("~> 0.20")},
       {:nx, "~> 0.12"},
       ortex_dep(),
+
+      # bb_reactor is an optional integration point (BB.Policy.Command is usable
+      # as a reactor step); pulled in for tests only so we can exercise that.
+      {:bb_reactor, "~> 0.1", only: :test},
 
       # dev/test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
