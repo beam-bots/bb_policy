@@ -34,9 +34,21 @@ defmodule BB.Policy.Controller do
                observation: [positions: [:hip, :knee], velocities: [:hip, :knee]],
                action: [{[:hip, :knee], :effort}]
              ],
-             rate: 50}
+             rate: 50},
+            # Controllers default to `simulation: :omit` (don't start in sim);
+            # set `:start` so the policy also runs under :kinematic/:mock sim.
+            simulation: :start
         end
       end
+
+  ## Running in simulation
+
+  The DSL's `controller` element defaults to `simulation: :omit`, so a policy
+  controller declared without an explicit `:simulation` **does not start** when
+  the robot runs in `:kinematic` or `:mock` simulation — it silently does
+  nothing. Declare `simulation: :start` (as above) to run the policy in sim, or
+  `:mock` for a no-op stand-in. In a real (non-simulated) deployment the
+  controller starts regardless.
 
   ## Options
 
