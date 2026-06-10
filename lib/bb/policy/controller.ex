@@ -90,7 +90,10 @@ defmodule BB.Policy.Controller do
           policy_module: policy_module,
           policy_state: policy_module.reset(policy_state),
           rate: rate,
-          step: 0
+          step: 0,
+          # Tracks the last-seen armed state so we reset the policy once on the
+          # armed -> disarmed transition rather than every idle tick.
+          armed: false
         }
 
         schedule_tick(rate)
@@ -104,11 +107,18 @@ defmodule BB.Policy.Controller do
   @impl BB.Controller
   def handle_info(:tick, state) do
     state =
-      if BB.Safety.armed?(state.robot) do
-        run_step(state)
-      else
-        # Idle while disarmed; keep the policy ready for a fresh armed episode.
-        %{state | policy_state: state.policy_module.reset(state.policy_state)}
+      case BB.Safety.armed?(state.robot) do
+        true ->
+          %{run_step(state) | armed: true}
+
+        false when state.armed ->
+          # Just transitioned armed -> disarmed: reset once so the next armed
+          # run starts from a clean episode, then idle.
+          %{state | policy_state: state.policy_module.reset(state.policy_state), armed: false}
+
+        false ->
+          # Already idle; nothing to do (avoids resetting every tick at `rate` Hz).
+          state
       end
 
     schedule_tick(state.rate)

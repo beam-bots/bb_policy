@@ -77,6 +77,34 @@ defmodule BB.Policy.ControllerTest do
       refute_received :should_not_happen
     end
 
+    test "resets the policy once on the armed -> disarmed transition, not every idle tick" do
+      parent = self()
+      Mimic.copy(MockPolicy)
+      stub(MockPolicy, :reset, fn s -> send(parent, :reset) && s end)
+
+      # A toggleable armed flag (robust to armed? being consulted more than once
+      # per tick — both the entry gate and Step's pre-apply re-check call it).
+      {:ok, armed} = Agent.start_link(fn -> true end)
+      stub(BB.Safety, :armed?, fn @robot -> Agent.get(armed, & &1) end)
+
+      {:ok, state} = Controller.init(init_opts([]))
+      # init/1 resets once; drain that.
+      assert_received :reset
+
+      # tick 1: armed -> runs a step, no reset
+      {:noreply, state} = Controller.handle_info(:tick, state)
+      refute_received :reset
+
+      # disarm, then tick 2: armed -> disarmed transition -> exactly one reset
+      Agent.update(armed, fn _ -> false end)
+      {:noreply, state} = Controller.handle_info(:tick, state)
+      assert_received :reset
+
+      # tick 3: still disarmed -> no further reset (the fix)
+      {:noreply, _state} = Controller.handle_info(:tick, state)
+      refute_received :reset
+    end
+
     test "a :done policy resets and keeps running (no terminal state)" do
       stub(BB.Safety, :armed?, fn @robot -> true end)
 

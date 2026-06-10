@@ -339,6 +339,11 @@ defmodule BB.Policy.Normalizer do
     error -> {:error, {:invalid_json, error}}
   end
 
+  # NOTE: feature keys and stat field names are interned with String.to_atom/1.
+  # A statistics file is a developer-controlled build artifact (exported
+  # alongside the model), not untrusted runtime input, and is parsed once at
+  # init — so unbounded atom creation is not a concern here. Do not point load/1
+  # at an attacker-controlled file.
   defp parse_space(decoded, name) do
     case Map.get(decoded, name, %{}) do
       map when is_map(map) ->
