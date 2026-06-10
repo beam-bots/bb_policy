@@ -16,9 +16,13 @@ defmodule BbPolicyFirmware.MixProject do
       archives: [nerves_bootstrap: "~> 1.13"],
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      releases: [{@app, release()}],
-      preferred_cli_target: [run: :host, test: :host]
+      releases: [{@app, release()}]
     ]
+  end
+
+  # Elixir 1.20 moved preferred targets/envs out of project/0 into this callback.
+  def cli do
+    [preferred_targets: [run: :host, test: :host]]
   end
 
   # Run on host with `iex -S mix`, on target with `MIX_TARGET=rpi0_2 mix firmware`.

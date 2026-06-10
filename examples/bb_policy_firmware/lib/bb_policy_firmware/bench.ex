@@ -21,7 +21,6 @@ defmodule BbPolicyFirmware.Bench do
   """
 
   alias BB.Policy.ONNX
-  require Logger
 
   @robot BbPolicyFirmware.Robot
   @expected [4.5, 6.5]
