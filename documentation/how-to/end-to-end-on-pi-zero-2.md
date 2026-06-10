@@ -330,3 +330,35 @@ that matters for a heavier (real ACT) model. These numbers are for the 207-byte
 8-parameter linear *fixture*, not a real policy — they prove the pipeline and
 the overhead floor, not that ACT runs at 20 Hz (that needs a real exported
 model, R2).
+
+### Re-validated after the upstream review fixes (2026-06-10)
+
+Re-built and re-flashed (`nephew-dry`, UUID `9e415cee`) from the consolidated
+`policy-stack` branch — i.e. *with* the PR-review changes: the `BB.Policy.Effect`
+protocol, per-feature normaliser, the in-`Step` safety re-check, and the new
+`{:priv, app, relative}` runtime model-path resolution. Two build-environment
+changes were needed and are now committed:
+
+- **Build in the OTP-28 `firmware` devShell.** The project moved to Erlang 29 /
+  Elixir 1.20, but no Nerves system ships OTP 29 yet (`nerves_system_rpi0_2`
+  2.0.x is OTP 28.5), and Nerves requires host==target OTP major. `flake.nix`
+  now has `devShells.firmware` (OTP 28.5 / Elixir 1.19): build with
+  `nix develop .#firmware` (the library still builds on OTP 29 by default).
+- **The example robot now declares a `BB.Policy.Controller`** (`simulation:
+  :start`) so the DSL controller path runs on-device, not just the imperative
+  `BB.Policy.run/4` bench. Its model uses `{:priv, :bb_policy_firmware,
+  "models/linear_policy.onnx"}` — a bare path would freeze the build host's at
+  compile time (Spark DSL opts are compile-time literals) and crash-loop the
+  controller on the device.
+
+On-device results (USB-gadget link, `bb_policy_firmware.local`):
+
+- **NIF loads on ARM:** `Code.ensure_loaded?(Ortex) == true`.
+- **Bench:** inference `{got: [4.5, 6.5]}`, loop `{ran: true}`, latency
+  p50 = 587 µs / p99 = 2484 µs / max = 3195 µs (≈20× under the 50 ms budget).
+- **DSL controller runs:** the supervised `BB.Controller.Server` for the `:policy`
+  controller is alive with `callback_module: BB.Policy.Controller`, the
+  `{:priv, …}` model resolved against the device app_dir, and its step counter
+  advances ~19–20/s while armed — i.e. a standing `BB.Policy.ONNX` policy driving
+  the simulated actuators at 20 Hz, on real hardware, without crash-looping. This
+  confirms the runtime model-path fix and the controller addition end-to-end.
