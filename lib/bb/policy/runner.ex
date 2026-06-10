@@ -206,6 +206,11 @@ defmodule BB.Policy.Runner do
         {:noreply,
          schedule_tick(%{state | policy_state: ps, episode_step: state.episode_step + 1})}
 
+      {:disarmed, ps} ->
+        # Disarmed mid-tick (between the entry gate and apply); nothing was
+        # applied. Same intervention as a top-of-tick disarm — end the episode.
+        finish(%{state | policy_state: ps}, :disarmed)
+
       {:error, _reason} = error ->
         finish(state, error)
     end

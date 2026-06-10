@@ -133,6 +133,14 @@ defmodule BB.Policy.Command do
         schedule_tick(state)
         {:noreply, state}
 
+      {:disarmed, policy_state} ->
+        # Disarmed between the entry gate and apply; nothing was applied. End the
+        # command as a safety stop (the core BB.Command safety path also halts on
+        # disarm via handle_safety_state_change/2).
+        state = %{state | policy_state: policy_state}
+        episode_stop(state, :disarmed)
+        {:stop, :normal, %{state | result: {:error, :disarmed}}}
+
       {:error, reason} ->
         episode_stop(state, reason)
         {:stop, :normal, %{state | result: {:error, reason}}}

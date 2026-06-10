@@ -118,6 +118,12 @@ defmodule BB.Policy.Controller do
         Telemetry.inference_stop(state.robot, state.policy_module, state.step, duration)
         %{state | policy_state: policy_state, step: state.step + 1}
 
+      {:disarmed, policy_state} ->
+        # Disarmed mid-tick (between the entry gate and apply); nothing applied.
+        # Reset and idle, ready for a fresh armed episode — same as the
+        # top-of-tick disarmed branch in handle_info/2.
+        %{state | policy_state: state.policy_module.reset(policy_state)}
+
       {:error, _reason} ->
         # Degrade gracefully: skip this tick, keep running. The next tick retries.
         state

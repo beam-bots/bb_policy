@@ -17,6 +17,9 @@ defmodule BB.Policy.CommandTest do
   setup do
     stub(BB.Robot.Runtime, :get_robot_state, fn @robot -> %{} end)
     stub(BB.Actuator, :set_position, fn @robot, _path, _value, _opts -> :ok end)
+    # Step re-checks armed? immediately before applying effects; the robot is
+    # armed throughout these happy-path tests.
+    stub(BB.Safety, :armed?, fn @robot -> true end)
     :ok
   end
 

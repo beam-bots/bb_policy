@@ -12,9 +12,13 @@ defmodule BB.Policy.Step do
 
       observe/3  →  act/2  →  action_to_commands/3  →  apply
 
-  It is deliberately free of scheduling, timing, safety, and telemetry policy —
-  callers (`BB.Policy.Runner`, `BB.Policy.Command`) own those. The caller is
-  responsible for the safety gate: only call `run/3` when the robot is armed.
+  It is deliberately free of scheduling, timing, and telemetry policy — callers
+  (`BB.Policy.Runner`, `BB.Policy.Command`) own those. Callers still gate *entry*
+  on `BB.Safety.armed?/1` (don't spend inference while disarmed, and decide
+  episode termination), but `run/3` re-checks `armed?` once more immediately
+  before applying any effect: a disarm that lands *during* inference must not
+  result in actuator commands. If disarmed at that point, no effect is applied
+  and `run/3` returns `{:disarmed, policy_state}`.
 
   `run/3` returns one of:
 
@@ -22,6 +26,8 @@ defmodule BB.Policy.Step do
       returned `{:done, state}`); no commands were applied.
     * `{:applied, policy_state, measurements}` — an action was applied;
       `measurements` carries `:inference_duration` (native time units).
+    * `{:disarmed, policy_state}` — the robot was disarmed between entry and
+      apply (a mid-inference safety intervention); no effect was applied.
     * `{:error, {:action_conversion, reason}}` — `action_to_commands/3` failed.
   """
 
@@ -31,6 +37,7 @@ defmodule BB.Policy.Step do
   @type outcome ::
           {:done, BB.Policy.state()}
           | {:applied, BB.Policy.state(), %{inference_duration: integer()}}
+          | {:disarmed, BB.Policy.state()}
           | {:error, {:action_conversion, term()}}
 
   @doc """
@@ -58,8 +65,16 @@ defmodule BB.Policy.Step do
   defp apply_action(policy_module, policy_state, robot, action, duration) do
     case policy_module.action_to_commands(action, robot, policy_state) do
       {:ok, commands} ->
-        Enum.each(commands, &Effect.apply(&1, robot))
-        {:applied, policy_state, %{inference_duration: duration}}
+        # Re-check the safety gate immediately before touching actuators: a
+        # disarm during observe/act (inference can dominate the tick) must not
+        # apply this tick's effects. The caller already gated entry; this closes
+        # the window between that check and the apply.
+        if BB.Safety.armed?(robot) do
+          Enum.each(commands, &Effect.apply(&1, robot))
+          {:applied, policy_state, %{inference_duration: duration}}
+        else
+          {:disarmed, policy_state}
+        end
 
       {:error, reason} ->
         {:error, {:action_conversion, reason}}

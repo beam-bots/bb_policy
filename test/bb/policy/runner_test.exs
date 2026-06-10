@@ -132,6 +132,33 @@ defmodule BB.Policy.RunnerTest do
 
       refute_received :should_not_happen
     end
+
+    test "a disarm during the tick (after the entry gate) is not applied" do
+      # armed? is true at the top-of-tick entry gate but false at the re-check
+      # Step.run does immediately before applying — the disarm landed during
+      # observe/act. No actuator command must reach the robot.
+      test_pid = self()
+      {:ok, counter} = Agent.start_link(fn -> 0 end)
+
+      stub(BB.Safety, :armed?, fn @robot ->
+        # call 0 = entry gate (armed), call 1 = Step re-check (disarmed)
+        Agent.get_and_update(counter, fn n -> {n, n + 1} end) < 1
+      end)
+
+      stub(BB.Actuator, :set_position, fn @robot, _path, _value, _opts ->
+        send(test_pid, :should_not_happen)
+        :ok
+      end)
+
+      assert {:ok, :disarmed} =
+               Runner.run(@robot, MockPolicy, %{},
+                 policy_opts: [path: [:shoulder, :servo]],
+                 rate_hz: 200,
+                 timeout: 200
+               )
+
+      refute_received :should_not_happen
+    end
   end
 
   describe "telemetry" do
