@@ -49,17 +49,30 @@ defmodule BB.Policy.NormalizerTest do
   end
 
   describe "identity / unregistered keys" do
-    test "an unregistered key passes through unchanged" do
+    test "an unregistered key raises rather than silently passing through" do
       {:ok, n} = Normalizer.new([])
       t = Nx.tensor([1.0, 2.0, 3.0])
-      assert close?(Normalizer.normalize(n, :observation, :anything, t), [1.0, 2.0, 3.0])
-      assert close?(Normalizer.denormalize(n, :action, :anything, t), [1.0, 2.0, 3.0])
+
+      assert_raise KeyError, ~r/no observation normalisation statistics/, fn ->
+        Normalizer.normalize(n, :observation, :anything, t)
+      end
+
+      assert_raise KeyError, ~r/no action normalisation statistics/, fn ->
+        Normalizer.denormalize(n, :action, :anything, t)
+      end
     end
 
     test "an explicit identity strategy passes through" do
       {:ok, n} = Normalizer.new(observation: %{s: %{strategy: :identity}})
       t = Nx.tensor([5.0, -5.0])
       assert close?(Normalizer.normalize(n, :observation, :s, t), [5.0, -5.0])
+    end
+
+    test "has_key?/3 reports whether a key has registered stats" do
+      {:ok, n} = Normalizer.new(observation: %{s: %{strategy: :identity}})
+      assert Normalizer.has_key?(n, :observation, :s)
+      refute Normalizer.has_key?(n, :observation, :missing)
+      refute Normalizer.has_key?(n, :action, :s)
     end
   end
 

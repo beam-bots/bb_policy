@@ -23,11 +23,18 @@ defmodule BB.Policy.Normalizer do
       Requires `:mean` and `:std`.
     * `:min_max` — scale a known range into `[0, 1]` (default) or `[-1, 1]`:
       `(x - min) / (max - min)`, optionally rescaled. Requires `:min` and `:max`.
+      > LeRobot's `MIN_MAX` maps to `[-1, 1]`, so stats exported from LeRobot
+      > want `range: :unit_symmetric` (`"range": "unit_symmetric"` in JSON).
     * `:identity` — passthrough. Requires no statistics.
 
   The observation path calls `normalize/4` (raw reading → policy input); the
   action path calls `denormalize/4` (policy output → engineering units). The two
   are exact inverses for a given key.
+
+  `normalize/4`/`denormalize/4` **raise** on a key with no registered statistics
+  rather than passing it through: a silently-skipped normalisation yields
+  unnormalised inference (plausible but wrong actions). Opt a key out explicitly
+  with `:identity` stats, or check `has_key?/3` before calling.
 
   ## Statistics
 
@@ -127,20 +134,39 @@ defmodule BB.Policy.Normalizer do
   @doc """
   Normalise `tensor` for `key` in `space` (`:observation` or `:action`).
 
-  A key with no registered statistics is passed through unchanged, so a
-  normaliser only needs entries for the keys it actually scales.
+  Raises `KeyError` if `key` has no registered statistics in `space`. This is
+  deliberate: a silently-skipped normalisation produces *unnormalised* inference
+  — plausible-looking but wrong actions — so a missing key is an error, not a
+  no-op. To intentionally pass a key through unchanged, register explicit
+  `:identity` statistics for it (`%{strategy: :identity}`).
   """
   @spec normalize(t(), space(), atom(), Nx.Tensor.t()) :: Nx.Tensor.t()
   def normalize(%__MODULE__{} = normalizer, space, key, tensor) do
-    apply_stats(fetch_stats(normalizer, space, key), :forward, tensor)
+    apply_stats(fetch_stats!(normalizer, space, key), :forward, tensor)
   end
 
   @doc """
   Invert `normalize/4`: map a normalised value for `key` back to engineering units.
+
+  Raises `KeyError` if `key` has no registered statistics in `space` (see
+  `normalize/4`).
   """
   @spec denormalize(t(), space(), atom(), Nx.Tensor.t()) :: Nx.Tensor.t()
   def denormalize(%__MODULE__{} = normalizer, space, key, tensor) do
-    apply_stats(fetch_stats(normalizer, space, key), :inverse, tensor)
+    apply_stats(fetch_stats!(normalizer, space, key), :inverse, tensor)
+  end
+
+  @doc """
+  Whether `key` has registered statistics in `space`.
+
+  Callers that build a normaliser from a model's I/O spec use this to validate,
+  up front, that every key they will normalise actually exists — turning a
+  missing-stats mistake into a clear setup-time error rather than silent
+  unnormalised inference at run time.
+  """
+  @spec has_key?(t(), space(), atom()) :: boolean()
+  def has_key?(%__MODULE__{} = normalizer, space, key) do
+    fetch_stats(normalizer, space, key) != nil
   end
 
   @doc """
@@ -212,8 +238,24 @@ defmodule BB.Policy.Normalizer do
   defp fetch_stats(normalizer, :observation, key), do: Map.get(normalizer.observation, key)
   defp fetch_stats(normalizer, :action, key), do: Map.get(normalizer.action, key)
 
-  # No stats registered for this key, or an explicit identity → passthrough.
-  defp apply_stats(nil, _direction, tensor), do: tensor
+  # Strict lookup: a missing key is an error (silent passthrough would mean
+  # unnormalised inference). Register :identity stats to opt a key out.
+  defp fetch_stats!(normalizer, space, key) do
+    case fetch_stats(normalizer, space, key) do
+      nil ->
+        raise KeyError,
+          key: key,
+          term: normalizer,
+          message:
+            "no #{space} normalisation statistics registered for key #{inspect(key)}. " <>
+              "Register stats for it, or %{strategy: :identity} to pass it through unchanged."
+
+      stats ->
+        stats
+    end
+  end
+
+  # An explicit identity → passthrough.
   defp apply_stats(%{strategy: :identity}, _direction, tensor), do: tensor
 
   defp apply_stats(%{strategy: :z_score} = stats, direction, tensor) do

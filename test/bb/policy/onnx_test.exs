@@ -83,11 +83,14 @@ defmodule BB.Policy.ONNXTest do
 
   describe "normalisation integration" do
     test "denormalises actions back to engineering units" do
-      # Action min_max [-10,10] -> the model output is in [0,1]-ish; here we just
-      # check the denormalise path is wired: identity stats means passthrough,
-      # z_score with mean/std shifts the output.
+      # Check the denormalise path is wired under the default :action key:
+      # z_score with mean/std shifts the output. The observation key keeps
+      # explicit identity stats so init's key validation passes.
       {:ok, normalizer} =
-        Normalizer.new(action: %{output: %{strategy: :z_score, mean: 1.0, std: 2.0}})
+        Normalizer.new(
+          observation: %{observation: %{strategy: :identity}},
+          action: %{action: %{strategy: :z_score, mean: 1.0, std: 2.0}}
+        )
 
       opts = Keyword.put(@policy_opts, :normalizer, normalizer)
       {:ok, state} = ONNX.init(opts)
@@ -100,6 +103,40 @@ defmodule BB.Policy.ONNXTest do
       # denorm: value * std + mean = [4.5*2+1, 6.5*2+1] = [10.0, 14.0]
       assert_in_delta cx.value, 10.0, 1.0e-5
       assert_in_delta cy.value, 14.0, 1.0e-5
+    end
+
+    test "init/1 fails loudly when a spec key has no registered stats" do
+      # A normaliser that registers the action key but not the observation key:
+      # init must refuse rather than silently leave observations unnormalised.
+      {:ok, normalizer} = Normalizer.new(action: %{action: %{strategy: :identity}})
+      opts = Keyword.put(@policy_opts, :normalizer, normalizer)
+
+      assert {:error, {:missing_normalizer_stats, missing}} = ONNX.init(opts)
+      assert {:observation, :observation} in missing
+    end
+
+    test "per-feature keys: an explicit :key routes to LeRobot-style feature stats" do
+      # observation under :"observation.state", action under :action.
+      {:ok, normalizer} =
+        Normalizer.new(
+          observation: %{"observation.state": %{strategy: :z_score, mean: 0.0, std: 1.0}},
+          action: %{action: %{strategy: :identity}}
+        )
+
+      opts = [
+        model: @model,
+        observation: [{:positions, [:a, :b, :c], key: :"observation.state"}],
+        action: [{[:x, :y], :position, key: :action}],
+        normalizer: normalizer
+      ]
+
+      assert {:ok, state} = ONNX.init(opts)
+
+      {%{input: input}, _state} =
+        ONNX.observe(robot_state_with(%{a: 1.0, b: 2.0, c: 3.0}), %{}, state)
+
+      # z_score mean 0 std 1 is identity here, so the input is unchanged.
+      assert Nx.to_flat_list(input) == [1.0, 2.0, 3.0]
     end
   end
 

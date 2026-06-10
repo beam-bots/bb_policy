@@ -25,20 +25,32 @@ defmodule BB.Policy.ONNX do
   ## Options
 
     * `:model` (required) — path to the `.onnx` file.
-    * `:observation` (required) — an ordered keyword list describing how to build
-      the model's single input vector from robot state. Each entry is
-      `source: joints`, where `source` is `:positions` or `:velocities` and
-      `joints` is the ordered list of joint names to read. Entries are
-      concatenated in order, normalised (see `:normalizer`), and reshaped to
-      `[1, N]`.
-    * `:action` (required) — an ordered list of `{joints, kind}` mapping the
-      model's output columns to actuator commands, where `kind` is `:position`,
-      `:velocity`, or `:effort`. Columns are consumed left-to-right across the
-      entries; the joint name doubles as the actuator path (wrap in a list for a
-      nested path).
+    * `:observation` (required) — an ordered list describing how to build the
+      model's input vector from robot state. Each entry is `{source, joints}` or
+      `{source, joints, opts}`, where `source` is `:positions` or `:velocities`,
+      `joints` is the ordered list of joint names to read, and `opts` may carry a
+      `:key` (the normalisation feature key, default `:observation`). Entries are
+      read in order; entries sharing a `:key` are normalised together (their
+      stats cover the combined vector); the normalised groups are concatenated in
+      the order each key first appears and reshaped to `[1, N]`. (A bare keyword
+      list like `[positions: joints]` still works — it's `{:positions, joints}`.)
+    * `:action` (required) — an ordered list of `{joints, kind}` or
+      `{joints, kind, opts}` mapping the model's output columns to actuator
+      commands, where `kind` is `:position`, `:velocity`, or `:effort` and `opts`
+      may carry a `:key` (default `:action`). Columns are consumed left-to-right;
+      entries sharing a `:key` are denormalised together; the joint name doubles
+      as the actuator path (wrap in a list for a nested path).
     * `:normalizer` — a `BB.Policy.Normalizer` struct, or a path to its JSON.
-      Observations are normalised under key `:observation`, actions
-      denormalised under key `:action`. Optional (defaults to identity).
+      Observation entries are normalised, and action entries denormalised, under
+      their `:key` (default `:observation`/`:action`). Use explicit keys to match
+      a per-feature export, e.g. a LeRobot `observation.state` / `action` JSON:
+      `observation: [{:positions, joints, key: :"observation.state"}]`. **Every
+      key the specs reference must have registered stats — `init/1` fails with
+      `{:error, {:missing_normalizer_stats, …}}` otherwise** (a missing key would
+      otherwise mean silent unnormalised inference). Optional; when omitted, an
+      explicit all-identity normaliser is built for the specs' keys.
+      > LeRobot `MIN_MAX` maps to `[-1, 1]`, so a LeRobot min-max export wants
+      > `"range": "unit_symmetric"` in its stats (see `BB.Policy.Normalizer`).
     * `:execution_providers` — ordered Ortex execution-provider list. Default
       `[:cpu]`. Note ort silently falls back to CPU if a provider isn't compiled
       in (see PROJECT_PLAN R4).
@@ -107,8 +119,12 @@ defmodule BB.Policy.ONNX do
   ]
 
   @type source :: :positions | :velocities
-  @type observation_spec :: [{source(), [atom()]}]
-  @type action_spec :: [{atom() | [atom()], ActuatorCommand.kind()}]
+  @type entry_opts :: [{:key, atom()}]
+  @type observation_spec :: [{source(), [atom()]} | {source(), [atom()], entry_opts()}]
+  @type action_spec :: [
+          {atom() | [atom()], ActuatorCommand.kind()}
+          | {atom() | [atom()], ActuatorCommand.kind(), entry_opts()}
+        ]
 
   @type t :: %__MODULE__{
           model: term(),
@@ -127,7 +143,8 @@ defmodule BB.Policy.ONNX do
          {:ok, model_path} <- fetch(opts, :model),
          {:ok, observation} <- fetch(opts, :observation),
          {:ok, action} <- fetch(opts, :action),
-         {:ok, normalizer} <- load_normalizer(opts[:normalizer]) do
+         {:ok, normalizer} <- load_normalizer(opts[:normalizer], observation, action),
+         :ok <- validate_normalizer_keys(normalizer, observation, action) do
       # apply/3 rather than a direct call: ortex is an optional dependency, so
       # the module may be absent at compile time. ensure_ortex/0 above guarantees
       # it is loaded before we reach here.
@@ -151,13 +168,24 @@ defmodule BB.Policy.ONNX do
 
   @impl BB.Policy
   def observe(robot_state, _sensors, %__MODULE__{} = state) do
-    vector =
+    # Read each entry's raw values, then normalise per feature key: entries
+    # sharing a `:key` are concatenated and normalised together (their stats
+    # cover the combined vector), and the normalised groups are concatenated in
+    # the order each key first appears. The model input column order is that
+    # group order.
+    input =
       state.observation
-      |> Enum.flat_map(fn {source, joints} -> read_joints(robot_state, source, joints) end)
-      |> Nx.tensor(type: :f32)
+      |> Enum.map(fn entry ->
+        {source, joints, key} = observation_entry(entry)
+        {key, read_joints(robot_state, source, joints)}
+      end)
+      |> group_by_key()
+      |> Enum.map(fn {key, values} ->
+        Normalizer.normalize(state.normalizer, :observation, key, Nx.tensor(values, type: :f32))
+      end)
+      |> Nx.concatenate()
 
-    normalised = Normalizer.normalize(state.normalizer, :observation, :input, vector)
-    {%{input: normalised}, state}
+    {%{input: input}, state}
   end
 
   # Temporal ensembling: infer every tick, then blend every stored chunk's
@@ -184,11 +212,11 @@ defmodule BB.Policy.ONNX do
 
   @impl BB.Policy
   def action_to_commands(%{action: row}, _robot, %__MODULE__{} = state) do
-    denormalised = Normalizer.denormalize(state.normalizer, :action, :output, row)
-    values = Nx.to_flat_list(denormalised)
+    values = denormalise_action(state.normalizer, state.action, row)
 
     {commands, _rest} =
-      Enum.reduce(state.action, {[], values}, fn {joints, kind}, {acc, remaining} ->
+      Enum.reduce(state.action, {[], values}, fn entry, {acc, remaining} ->
+        {joints, kind, _key} = action_entry(entry)
         joints = List.wrap(joints)
         {taken, rest} = Enum.split(remaining, length(joints))
 
@@ -222,9 +250,105 @@ defmodule BB.Policy.ONNX do
     end
   end
 
-  defp load_normalizer(nil), do: {:ok, %Normalizer{}}
-  defp load_normalizer(%Normalizer{} = normalizer), do: {:ok, normalizer}
-  defp load_normalizer(path) when is_binary(path), do: Normalizer.load(path)
+  # No normalizer given → build an explicit all-identity one covering every key
+  # the specs reference, so "no normalisation" is a deliberate identity rather
+  # than a silently-missing key.
+  defp load_normalizer(nil, observation, action) do
+    obs_keys = observation |> Enum.map(&elem(observation_entry(&1), 2)) |> Enum.uniq()
+    action_keys = action |> Enum.map(&elem(action_entry(&1), 2)) |> Enum.uniq()
+    identity = fn keys -> Map.new(keys, &{&1, %{strategy: :identity}}) end
+
+    Normalizer.new(observation: identity.(obs_keys), action: identity.(action_keys))
+  end
+
+  defp load_normalizer(%Normalizer{} = normalizer, _observation, _action), do: {:ok, normalizer}
+
+  defp load_normalizer(path, _observation, _action) when is_binary(path),
+    do: Normalizer.load(path)
+
+  # An observation entry is `{source, joints}` (key defaults to :observation) or
+  # `{source, joints, opts}` carrying an explicit `key:` (e.g. a LeRobot feature
+  # name like :"observation.state").
+  defp observation_entry({source, joints}), do: {source, joints, :observation}
+
+  defp observation_entry({source, joints, opts}),
+    do: {source, joints, Keyword.get(opts, :key, :observation)}
+
+  # An action entry is `{joints, kind}` (key defaults to :action) or
+  # `{joints, kind, opts}` with an explicit `key:`.
+  defp action_entry({joints, kind}), do: {joints, kind, :action}
+  defp action_entry({joints, kind, opts}), do: {joints, kind, Keyword.get(opts, :key, :action)}
+
+  # Concatenate the values of entries sharing a key, preserving the order each
+  # key first appears. Returns `[{key, [value]}]`.
+  defp group_by_key(keyed_values) do
+    keyed_values
+    |> Enum.reduce({[], %{}}, fn {key, values}, {order, acc} ->
+      order = if Map.has_key?(acc, key), do: order, else: [key | order]
+      {order, Map.update(acc, key, values, &(&1 ++ values))}
+    end)
+    |> then(fn {order, acc} -> Enum.map(Enum.reverse(order), &{&1, acc[&1]}) end)
+  end
+
+  # Denormalise the flat action row per feature key, then flatten back to a list
+  # of engineering-unit values in the original entry/column order. Entries
+  # sharing a key are denormalised together (their stats cover the combined
+  # action vector).
+  defp denormalise_action(normalizer, action_spec, row) do
+    flat = Nx.to_flat_list(row)
+
+    # [{key, width}] per entry, in column order.
+    widths =
+      Enum.map(action_spec, fn entry ->
+        {joints, _kind, key} = action_entry(entry)
+        {key, length(List.wrap(joints))}
+      end)
+
+    # Slice the row into per-entry chunks, group by key, denormalise each group,
+    # then re-slice into per-entry values so the caller can map them to joints.
+    {entry_slices, _} =
+      Enum.map_reduce(widths, flat, fn {key, width}, remaining ->
+        {chunk, rest} = Enum.split(remaining, width)
+        {{key, chunk}, rest}
+      end)
+
+    denorm_by_key =
+      entry_slices
+      |> group_by_key()
+      |> Map.new(fn {key, values} ->
+        denormalised =
+          Normalizer.denormalize(normalizer, :action, key, Nx.tensor(values, type: :f32))
+
+        {key, Nx.to_flat_list(denormalised)}
+      end)
+
+    # Re-emit per-entry values in column order, drawing from each key's
+    # denormalised buffer in first-appearance order.
+    {result, _} =
+      Enum.flat_map_reduce(entry_slices, denorm_by_key, fn {key, chunk}, buffers ->
+        {taken, rest} = Enum.split(buffers[key], length(chunk))
+        {taken, Map.put(buffers, key, rest)}
+      end)
+
+    result
+  end
+
+  # Validate, at init, that every feature key the specs reference has registered
+  # normalisation stats. Turns a missing-stats mistake into a clear setup-time
+  # error rather than a run-time raise mid-episode (or, worse, silent passthrough).
+  defp validate_normalizer_keys(normalizer, observation, action) do
+    obs_keys = observation |> Enum.map(&elem(observation_entry(&1), 2)) |> Enum.uniq()
+    action_keys = action |> Enum.map(&elem(action_entry(&1), 2)) |> Enum.uniq()
+
+    missing =
+      (Enum.map(obs_keys, &{:observation, &1}) ++ Enum.map(action_keys, &{:action, &1}))
+      |> Enum.reject(fn {space, key} -> Normalizer.has_key?(normalizer, space, key) end)
+
+    case missing do
+      [] -> :ok
+      _ -> {:error, {:missing_normalizer_stats, missing}}
+    end
+  end
 
   defp read_joints(robot_state, :positions, joints) do
     all = RobotState.get_all_positions(robot_state)
