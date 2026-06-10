@@ -44,6 +44,20 @@ defmodule BB.Policy.ONNXTest do
       assert {:error, {:missing_option, :model}} =
                ONNX.init(observation: [], action: [])
     end
+
+    test "resolves a {:priv, app, relative} model against the app's priv dir" do
+      # The fixture model is shipped in this package's priv... it isn't, so point
+      # at a real file via :code.priv_dir of an app that exists. Use :bb_policy's
+      # own priv if present; otherwise assert the not-found path is clean.
+      opts = Keyword.put(@policy_opts, :model, {:priv, :bb_policy, "models/missing.onnx"})
+      assert {:error, {:model_not_found, path}} = ONNX.init(opts)
+      assert String.ends_with?(path, "priv/models/missing.onnx")
+    end
+
+    test "rejects an invalid model spec" do
+      opts = Keyword.put(@policy_opts, :model, 123)
+      assert {:error, {:invalid_model, 123}} = ONNX.init(opts)
+    end
   end
 
   describe "the full observe -> act -> action_to_commands cycle" do

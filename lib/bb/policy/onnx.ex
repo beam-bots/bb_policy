@@ -24,7 +24,13 @@ defmodule BB.Policy.ONNX do
 
   ## Options
 
-    * `:model` (required) — path to the `.onnx` file.
+    * `:model` (required) — the `.onnx` model to load, as either:
+      * a path string (resolved by Ortex against the working directory), or
+      * `{:priv, app, relative}` — resolved at `init/1` (runtime) against `app`'s
+        priv directory via `Application.app_dir/2`. Use this when the model ships
+        in a packaged app (e.g. a Nerves firmware), so the path is correct on the
+        device rather than frozen to the build host. A missing file fails `init/1`
+        with `{:error, {:model_not_found, path}}`.
     * `:observation` (required) — an ordered list describing how to build the
       model's input vector from robot state. Each entry is `{source, joints}` or
       `{source, joints, opts}`, where `source` is `:positions` or `:velocities`,
@@ -140,7 +146,8 @@ defmodule BB.Policy.ONNX do
   @impl BB.Policy
   def init(opts) do
     with :ok <- ensure_ortex(),
-         {:ok, model_path} <- fetch(opts, :model),
+         {:ok, model_spec} <- fetch(opts, :model),
+         {:ok, model_path} <- resolve_model_path(model_spec),
          {:ok, observation} <- fetch(opts, :observation),
          {:ok, action} <- fetch(opts, :action),
          {:ok, normalizer} <- load_normalizer(opts[:normalizer], observation, action),
@@ -248,6 +255,27 @@ defmodule BB.Policy.ONNX do
       {:ok, value} -> {:ok, value}
       :error -> {:error, {:missing_option, key}}
     end
+  end
+
+  # Resolve the :model option to a filesystem path, at init (runtime) so it lands
+  # on whatever node we're on — important for a Nerves device, where the install
+  # root differs from the build host and a path frozen at compile time is wrong.
+  #
+  #   * a binary path is used verbatim (Ortex resolves it against the cwd);
+  #   * `{:priv, app, relative}` resolves against `app`'s priv dir on this node
+  #     via Application.app_dir/2 (the right idiom for a packaged model file).
+  #
+  # A missing file fails init cleanly rather than crashing in Ortex.load.
+  defp resolve_model_path({:priv, app, relative}) when is_atom(app) and is_binary(relative) do
+    check_model_file(Application.app_dir(app, Path.join("priv", relative)))
+  end
+
+  defp resolve_model_path(path) when is_binary(path), do: check_model_file(path)
+
+  defp resolve_model_path(other), do: {:error, {:invalid_model, other}}
+
+  defp check_model_file(path) do
+    if File.exists?(path), do: {:ok, path}, else: {:error, {:model_not_found, path}}
   end
 
   # No normalizer given → build an explicit all-identity one covering every key

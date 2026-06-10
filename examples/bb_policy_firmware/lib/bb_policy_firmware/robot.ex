@@ -35,11 +35,11 @@ defmodule BbPolicyFirmware.Robot do
       {BB.Policy.Controller,
        policy: BB.Policy.ONNX,
        policy_opts: [
-         # ONNX passes :model straight to Ortex.load, which resolves it relative
-         # to the working directory — so on a Nerves device this wants the
-         # app_dir path (BbPolicyFirmware.Bench resolves the same file via
-         # Application.app_dir/2). Shown relative here for readability.
-         model: "priv/models/linear_policy.onnx",
+         # {:priv, app, relative} so BB.Policy.ONNX resolves the model against
+         # this firmware app's priv dir on the *device* at init — DSL controller
+         # opts are frozen at compile time, so a bare path would capture the
+         # build host's. (The Bench module resolves the same file at runtime.)
+         model: {:priv, :bb_policy_firmware, "models/linear_policy.onnx"},
          observation: [positions: [:a, :b, :c]],
          action: [{[:a, :b, :c], :position}]
        ],
