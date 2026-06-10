@@ -97,10 +97,13 @@ policy reaches its goal by returning `{:done, state}` from `act/2`.
 - **Reading robot state:** `BB.Robot.Runtime.get_robot_state/1` then the
   `BB.Robot.State` accessors; or subscribe via `BB.PubSub.subscribe/2,3` and
   cache the latest payloads.
-- **Commands out:** a policy's `action_to_commands/3` returns
-  `BB.Policy.ActuatorCommand` structs (core has no command type of its own); the
-  runner dispatches each to `BB.Actuator` (`set_position/4`, `set_velocity/4`, …)
-  while armed.
+- **Commands out:** a policy's `action_to_commands/3` returns a list of
+  `BB.Policy.Effect`s; the control loop applies each via `BB.Policy.Effect.apply/2`
+  while armed. `BB.Policy.ActuatorCommand` is the built-in effect — it maps to a
+  `BB.Actuator` call (`set_position/4`, `set_velocity/4`, `set_effort/4`,
+  `hold/3`, `stop/3`). (Note: this is `bb_policy`'s *own* effect type; core has
+  its own command machinery — `BB.Command.*` handlers like `Arm`/`MoveTo` — which
+  is a separate concern from a policy's per-tick actuator outputs.)
 - **Errors:** prefer structured `BB.Error` types over ad-hoc tuples where they
   fit; all `BB.Error` types must implement `BB.Error.Severity`.
 - **Telemetry:** emit through `BB.Telemetry`, event names `[:bb, :policy, …]`.

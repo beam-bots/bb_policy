@@ -25,7 +25,7 @@ defmodule BB.Policy.Step do
     * `{:error, {:action_conversion, reason}}` — `action_to_commands/3` failed.
   """
 
-  alias BB.Policy.ActuatorCommand
+  alias BB.Policy.Effect
   alias BB.Robot.Runtime
 
   @type outcome ::
@@ -58,7 +58,7 @@ defmodule BB.Policy.Step do
   defp apply_action(policy_module, policy_state, robot, action, duration) do
     case policy_module.action_to_commands(action, robot, policy_state) do
       {:ok, commands} ->
-        Enum.each(commands, &ActuatorCommand.apply(&1, robot))
+        Enum.each(commands, &Effect.apply(&1, robot))
         {:applied, policy_state, %{inference_duration: duration}}
 
       {:error, reason} ->
