@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 Edgar Gomes de Araujo <talktoedgar@gmail.com>
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Install the hooks with `lefthook install` (lefthook is in the flake devShell).
+#
+# The pre-commit hook formats only STAGED files via `nix fmt` and re-stages the
+# results (stage_fixed: true), so a commit with unformatted code is fixed in
+# place and succeeds — unstaged hunks of a partially-staged file are untouched.
+pre-commit:
+  commands:
+    format:
+      run: nix fmt -- {staged_files}
+      stage_fixed: true
