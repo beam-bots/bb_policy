@@ -92,7 +92,7 @@ defmodule BB.Policy.MixProject do
 
   defp deps do
     [
-      {:bb, bb_dep("~> 0.20")},
+      {:bb, bb_dep("~> 0.22 and >= 0.22.1")},
       {:nx, "~> 0.12"},
       ortex_dep(),
 

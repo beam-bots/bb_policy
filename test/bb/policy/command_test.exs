@@ -106,10 +106,13 @@ defmodule BB.Policy.CommandTest do
   end
 
   describe "safety integration" do
-    test "the default disarm handler stops the command with :disarmed" do
+    test "the default disarm handler stops the command on disarm" do
       {:ok, state} = Command.init(init_opts([]))
-      # handle_safety_state_change/2 comes from `use BB.Command` (default).
-      assert {:stop, :disarmed, ^state} = Command.handle_safety_state_change(:disarmed, state)
+      # handle_safety_state_change/2 comes from `use BB.Command` (default). Newer
+      # bb wraps the reason as `{:shutdown, :disarmed}` (a graceful stop that
+      # isn't logged as a crash); older releases used the bare `:disarmed`.
+      assert {:stop, reason, ^state} = Command.handle_safety_state_change(:disarmed, state)
+      assert reason in [:disarmed, {:shutdown, :disarmed}]
     end
   end
 end
