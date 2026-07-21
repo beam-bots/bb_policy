@@ -115,7 +115,10 @@ policy reaches its goal by returning `{:done, state}` from `act/2`.
 - **Licensing:** every file carries an SPDX header (a copyright line and an
   Apache-2.0 licence identifier); `.md` uses an HTML-comment header. Files that
   can't carry comments get a `<file>.license` sidecar. `mix check` runs
-  `reuse lint`.
+  `reuse lint`. When you create a file, its `SPDX-FileCopyrightText` must credit
+  **the user you are working for** (take their name from `git config user.name`,
+  use the current year) — not you the agent, and not the repo's original author.
+  Never copy an existing file's copyright line onto a new file.
 
 ## Scope (from the proposal)
 
