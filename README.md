@@ -50,8 +50,8 @@ end
     policy_opts: [
       model: "priv/models/pick_mug.onnx",
       normalizer: "priv/models/pick_mug.json",
-      observation_keys: [:joint_positions, :joint_velocities, :gripper],
-      action_keys: [:target_positions, :target_gripper]
+      observation: [positions: [:shoulder, :elbow, :wrist]],
+      action: [{[:shoulder, :elbow, :wrist], :position}]
     ],
     rate_hz: 20,
     timeout: :timer.seconds(30)
