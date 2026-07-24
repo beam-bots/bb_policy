@@ -84,6 +84,24 @@ The behaviour, runner, and normaliser have no ML runtime dependency. `ortex` is
 clear error when absent, so the package compiles and tests pass without a
 compiled onnxruntime.
 
+### D7 — Policies declare message inputs; runtimes collect envelopes
+
+Message inputs are part of a policy's trained observation contract, so an
+optional `BB.Policy.inputs/1` callback declares named PubSub paths, per-input
+payload types and age limits, an optional alignment tolerance, and a collector
+queue threshold after `init/1`. All three
+runtimes share an independent latest-envelope collector and pass complete
+`BB.Message` values to `observe/3`; they do not strip payloads or query a sample
+store on the control-loop hot path. Joint-only policies default to no message
+inputs.
+
+After a runtime applies its first effect, a required input becoming missing,
+stale, cross-node, or misaligned calls a planned direct
+`BB.Safety.emergency_disarm/2` API before a bounded runtime terminates; a
+standing controller requests the same intervention and resets. This path must
+bypass configurable disarm commands and command capacity. The full contract and
+lifecycle are in `docs/design.md`.
+
 ## 3. Risks (from the ML-stack review)
 
 | # | Risk | Severity | Mitigation |
@@ -93,6 +111,7 @@ compiled onnxruntime.
 | R3 | **NIF blocks the BEAM scheduler.** Ortex inference is a Rustler NIF; a multi-ms call on a normal scheduler hurts soft-real-time jitter. | Medium | Verify Ortex uses a dirty NIF; isolate inference in its own process from the timing loop; cap onnxruntime's intra/inter-op thread pool (leave headroom for BEAM schedulers). Measure **p99**, not mean. |
 | R4 | **Silent CPU fallback.** ort silently falls back to CPU if a requested execution provider isn't compiled in. | Low | Log/assert the active EP at load; document that CUDA/CoreML require building Ortex with those features. |
 | R5 | **Diffusion/VLA expectations.** Users may expect any LeRobot policy to "just load". | Low | Scope doc + clear error: v1 supports ACT-class static-shape ONNX. |
+| R6 | **Policy termination can leave the last actuator command active.** Runner/Command completion, timeout, cancellation, and conversion failure stop without disarming or applying a terminal effect; Controller conversion failure keeps running with its previous effect. Position targets may continue or hold, and velocity/effort commands are persistent. | High | Observation invalidation uses the direct emergency-disarm contract (D7). Issue [#20](https://github.com/beam-bots/bb_policy/issues/20) is the release-blocking safety design for existing termination paths; optional `hold`/`stop` support is not assumed portable. |
 
 ## 4. Phased roadmap
 
@@ -253,6 +272,46 @@ Still open (deferred by design):
 - On-target thread-pool tuning + p99 for a real model (R3).
 - Core PR for `BB.Motion.run_policy/4` (D1).
 
+### Phase 7 — Message observation inputs (planned, issue #9)
+
+Blocked from release by the existing policy-termination safety work in issue
+[#20](https://github.com/beam-bots/bb_policy/issues/20).
+
+- Add optional `BB.Policy.inputs/1` with named exact paths, mandatory per-input
+  payload types and age limits, plus optional whole-snapshot alignment and
+  collector queue limits.
+- Add one shared collector implementation used by Runner, Command, and
+  Controller. It runs independently of inference and caches the newest complete
+  local `BB.Message` envelope per alias.
+- Make `BB.Policy.Step` consume a validated `BB.Policy.ObservationSnapshot`
+  carrying messages, collector generation, and earliest expiry; bare external
+  fourth-argument maps are no longer an effect-applying path.
+- Validate missing, stale, cross-node, and misaligned inputs before inference;
+  recheck collector generation/liveness and the snapshot's earliest expiry
+  immediately before applying effects.
+- Keep joint-only policies compatible through the default empty input spec.
+- Treat collection before the first applied effect as warm-up within the
+  existing timeout. Afterwards, invalidation calls direct emergency disarm
+  before Runner/Command report an error; Controller requests the same disarm
+  and resets once.
+- Add `BB.Safety.emergency_disarm/2` in core so safety-originated intervention
+  cannot be rejected by disarm-command routing or command-category capacity.
+  Disarm failure enters `:error` and takes precedence over the observation error.
+- Make core register every actuator's required `disarm/1` callback with safety
+  before the robot can arm, and treat registration loss while armed as an
+  emergency-disarm trigger.
+- Add a core arm epoch: actuator command publication stamps the current epoch,
+  disarm invalidates it before callbacks run, and actuator servers reject
+  missing or stale epochs. This prevents queued commands from applying after a
+  disarm callback or later re-arm. The guarantee covers built-in actuator
+  effects; custom effects that drive hardware require equivalent epoch and
+  safety-registration semantics.
+- Extend `BB.Policy.ONNX` with message-derived and multi-input model sources only
+  after the common collection path is complete.
+- Verify all three lifecycles, collector overload/failure under slow inference,
+  and the pre-inference/pre-publication observation gates. Document the remaining
+  asynchronous interval before disarm callbacks make hardware safe.
+
 ## 5. Acceptance-criteria → phase map
 
 From the proposal's "Acceptance Criteria":
@@ -270,21 +329,25 @@ contract/lifecycle/normalisation (P0–P2).
 **Won't Have** (separate packages) — native Axon policies, diffusion policies,
 training loops, dataset management, vision encoders, Python bridge.
 
-## 6. Open questions (from the proposal) — current leanings
+## 6. Proposal questions — current status
 
-1. **Observation source** — pre-processed robot state from `BB.Robot.Runtime`
-   plus latest sensor payloads; camera frames handled in `observe/3` for now,
-   revisit if a `bb_vision` pipeline lands.
-2. **Action representation** — configurable per policy via `action_keys`;
-   target positions first, deltas/velocities as variants.
-3. **Episode boundaries** — timeout + policy-signalled completion; external
-   cancel via the runner process. (Needs a "done" signal in the action contract.)
-4. **Goal specification** — opaque term forwarded into policy state; policies
-   that condition on a goal map it into their observation.
-5. **Multi-step actions (chunking)** — receding-horizon queue first (P3),
-   temporal ensembling later (P5).
-6. **Vision input** — preprocessing in `observe/3` initially.
-7. **Recurrent policies** — hidden state lives in policy `state`; history-window
-   buffering is the policy's concern.
+1. **Observation source — decided, not implemented.** Robot state remains from
+   `BB.Robot.Runtime`; named message inputs use the envelope snapshot contract
+   in D7 and `docs/design.md` (P7).
+2. **Action representation — implemented.** `BB.Policy.ONNX` uses ordered
+   `:action` specifications supporting position, velocity, and effort outputs.
+3. **Episode boundaries — partially implemented.** Timeout and
+   policy-signalled `:done` are shipped; a public external-cancellation API
+   remains open.
+4. **Goal specification — open.** Runner and Command retain the goal for
+   lifecycle and telemetry, but current policy callbacks do not receive it.
+5. **Multi-step actions — implemented.** Receding-horizon queues and temporal
+   ensembling both shipped in P5.
+6. **Vision input — boundary decided, implementation pending.** Reusable decode,
+   geometry, detection, and embedding stages belong to `bb_perception`;
+   policy-trained tensor layout, resizing, feature selection, and normalisation
+   remain in `observe/3`. Message-derived ONNX inputs follow P7.
+7. **Recurrent policies — decided.** Hidden state lives in policy `state`;
+   history-window buffering remains the policy's concern.
 
 These are tracked to be closed as the relevant phases land.
