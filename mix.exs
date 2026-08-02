@@ -93,8 +93,9 @@ defmodule BB.Policy.MixProject do
 
   defp deps do
     [
-      {:bb, bb_dep("~> 0.22 and >= 0.22.1")},
+      {:bb, bb_dep("~> 0.26")},
       {:nx, "~> 0.12"},
+      {:telemetry, "~> 1.0"},
       ortex_dep(),
 
       # bb_reactor is an optional integration point (BB.Policy.Command is usable

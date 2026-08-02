@@ -73,6 +73,7 @@ defmodule BB.Policy.Controller do
       rate: [type: :pos_integer, default: 20, doc: "Control-loop frequency (Hz)"]
     ]
 
+  alias BB.Loop
   alias BB.Policy.Step
   alias BB.Policy.Telemetry
 
@@ -89,14 +90,13 @@ defmodule BB.Policy.Controller do
           robot: bb.robot,
           policy_module: policy_module,
           policy_state: policy_module.reset(policy_state),
-          rate: rate,
+          loop: Loop.arm(Loop.new(bb, clock: {:rate, rate})),
           step: 0,
           # Tracks the last-seen armed state so we reset the policy once on the
           # armed -> disarmed transition rather than every idle tick.
           armed: false
         }
 
-        schedule_tick(rate)
         {:ok, state}
 
       {:error, reason} ->
@@ -106,6 +106,9 @@ defmodule BB.Policy.Controller do
 
   @impl BB.Controller
   def handle_info(:tick, state) do
+    {_dt, _skipped, loop} = Loop.tick(state.loop)
+    state = %{state | loop: loop}
+
     state =
       case BB.Safety.armed?(state.robot) do
         true ->
@@ -121,7 +124,6 @@ defmodule BB.Policy.Controller do
           state
       end
 
-    schedule_tick(state.rate)
     {:noreply, state}
   end
 
@@ -129,6 +131,12 @@ defmodule BB.Policy.Controller do
 
   @impl BB.Controller
   def disarm(_opts), do: :ok
+
+  @impl BB.Controller
+  def terminate(_reason, state) do
+    Loop.cancel(state.loop)
+    :ok
+  end
 
   defp run_step(state) do
     case Step.run(state.policy_module, state.policy_state, state.robot) do
@@ -151,6 +159,4 @@ defmodule BB.Policy.Controller do
         state
     end
   end
-
-  defp schedule_tick(rate), do: Process.send_after(self(), :tick, max(1, div(1000, rate)))
 end

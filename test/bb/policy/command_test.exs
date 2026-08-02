@@ -37,7 +37,7 @@ defmodule BB.Policy.CommandTest do
       assert state.robot == @robot
       assert state.policy_module == MockPolicy
       assert state.rate_hz == 50
-      assert state.interval_ms == 20
+      assert state.loop.clock == {:rate, 50.0}
       assert state.result == nil
     end
 

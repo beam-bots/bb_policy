@@ -81,6 +81,7 @@ defmodule BB.Policy.Command do
       rate_hz: [type: :pos_integer, default: 20, doc: "Control-loop frequency (Hz)"]
     ]
 
+  alias BB.Loop
   alias BB.Policy.Step
   alias BB.Policy.Telemetry
 
@@ -101,7 +102,9 @@ defmodule BB.Policy.Command do
            policy_module: policy_module,
            policy_state: policy_state,
            rate_hz: rate_hz,
-           interval_ms: max(1, div(1000, rate_hz)),
+           # `BB.Command.Server` injects `bb` without a `:path` (unlike
+           # `BB.Process` and `BB.Controller.Server`), so name the loop here.
+           loop: Loop.new(%{robot: bb.robot, path: [:policy_command]}, clock: {:rate, rate_hz}),
            step: 0,
            result: nil
          }}
@@ -115,12 +118,14 @@ defmodule BB.Policy.Command do
   def handle_command(goal, context, state) do
     state = %{state | policy_state: state.policy_module.reset(state.policy_state)}
     Telemetry.episode_start(context.robot_module, state.policy_module, goal)
-    schedule_tick(state)
-    {:noreply, state}
+    {:noreply, %{state | loop: Loop.arm(state.loop)}}
   end
 
   @impl BB.Command
   def handle_info(:tick, state) do
+    {_dt, _skipped, loop} = Loop.tick(state.loop)
+    state = %{state | loop: loop}
+
     case Step.run(state.policy_module, state.policy_state, state.robot) do
       {:done, policy_state} ->
         state = %{state | policy_state: policy_state}
@@ -129,9 +134,7 @@ defmodule BB.Policy.Command do
 
       {:applied, policy_state, %{inference_duration: duration}} ->
         Telemetry.inference_stop(state.robot, state.policy_module, state.step, duration)
-        state = %{state | policy_state: policy_state, step: state.step + 1}
-        schedule_tick(state)
-        {:noreply, state}
+        {:noreply, %{state | policy_state: policy_state, step: state.step + 1}}
 
       {:disarmed, policy_state} ->
         # Disarmed between the entry gate and apply; nothing was applied. End the
@@ -152,8 +155,6 @@ defmodule BB.Policy.Command do
   @impl BB.Command
   def result(%{result: nil}), do: {:error, :incomplete}
   def result(%{result: result}), do: result
-
-  defp schedule_tick(state), do: Process.send_after(self(), :tick, state.interval_ms)
 
   defp episode_stop(state, reason),
     do: Telemetry.episode_stop(state.robot, state.policy_module, state.step, reason)

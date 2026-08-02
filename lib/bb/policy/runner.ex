@@ -15,8 +15,9 @@ defmodule BB.Policy.Runner do
 
     * **Observation collection** — reads robot state from `BB.Robot.Runtime` and
       hands it to the policy's `c:BB.Policy.observe/3`.
-    * **Inference scheduling** — ticks at `:rate_hz`, rescheduled per tick via
-      `Process.send_after/3` (the ecosystem idiom; see `BB.PID.Controller`).
+    * **Inference scheduling** — ticks at `:rate_hz` via `BB.Loop`, which
+      schedules against an absolute deadline and drops whole missed periods
+      rather than firing a burst of catch-up inferences.
     * **Action application** — applies `BB.Policy.ActuatorCommand`s via
       `BB.Actuator`, but only while `BB.Safety.armed?/1` is true. A disarm halts
       the episode.
@@ -63,6 +64,7 @@ defmodule BB.Policy.Runner do
 
   use GenServer
 
+  alias BB.Loop
   alias BB.Policy.Step
   alias BB.Policy.Telemetry
   alias BB.Process, as: BBProcess
@@ -79,10 +81,9 @@ defmodule BB.Policy.Runner do
     :policy_state,
     :goal,
     :rate_hz,
-    :interval_ms,
+    :loop,
     :timeout,
     :deadline,
-    :tick_ref,
     :owner,
     episode_step: 0
   ]
@@ -156,7 +157,7 @@ defmodule BB.Policy.Runner do
           policy_state: policy_module.reset(policy_state),
           goal: goal,
           rate_hz: rate_hz,
-          interval_ms: max(1, div(1000, rate_hz)),
+          loop: Loop.new(%{robot: robot, path: [:policy_runner]}, clock: {:rate, rate_hz}),
           timeout: timeout,
           deadline: monotonic_ms() + timeout,
           owner: Keyword.get(opts, :owner),
@@ -164,7 +165,7 @@ defmodule BB.Policy.Runner do
         }
 
         Telemetry.episode_start(robot, policy_module, goal)
-        {:ok, schedule_tick(state), {:continue, :first_tick}}
+        {:ok, %{state | loop: Loop.arm(state.loop)}, {:continue, :first_tick}}
 
       {:error, reason} ->
         {:stop, {:policy_init, reason}}
@@ -176,6 +177,9 @@ defmodule BB.Policy.Runner do
 
   @impl GenServer
   def handle_info(:tick, %__MODULE__{} = state) do
+    {_dt, _skipped, loop} = Loop.tick(state.loop)
+    state = %{state | loop: loop}
+
     cond do
       monotonic_ms() >= state.deadline ->
         finish(state, :timeout)
@@ -191,6 +195,11 @@ defmodule BB.Policy.Runner do
   end
 
   @impl GenServer
+  def terminate(_reason, %__MODULE__{loop: loop}) do
+    Loop.cancel(loop)
+    :ok
+  end
+
   def terminate(_reason, _state), do: :ok
 
   # --- the control step ----------------------------------------------------
@@ -203,8 +212,7 @@ defmodule BB.Policy.Runner do
       {:applied, ps, %{inference_duration: duration}} ->
         Telemetry.inference_stop(state.robot, state.policy_module, state.episode_step, duration)
 
-        {:noreply,
-         schedule_tick(%{state | policy_state: ps, episode_step: state.episode_step + 1})}
+        {:noreply, %{state | policy_state: ps, episode_step: state.episode_step + 1}}
 
       {:disarmed, ps} ->
         # Disarmed mid-tick (between the entry gate and apply); nothing was
@@ -236,10 +244,6 @@ defmodule BB.Policy.Runner do
   defp result_for(reason), do: {:ok, reason}
 
   # --- helpers -------------------------------------------------------------
-
-  defp schedule_tick(%__MODULE__{interval_ms: interval_ms} = state) do
-    %{state | tick_ref: Process.send_after(self(), :tick, interval_ms)}
-  end
 
   defp monotonic_ms, do: System.monotonic_time(:millisecond)
 end
