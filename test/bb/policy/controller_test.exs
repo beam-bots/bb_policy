@@ -20,15 +20,19 @@ defmodule BB.Policy.ControllerTest do
     :ok
   end
 
+  # `BB.Controller.Server` injects `bb: %{robot: _, path: _}`; replicate both.
   defp init_opts(extra) do
-    Keyword.merge([bb: %{robot: @robot}, policy: MockPolicy, policy_opts: [], rate: 50], extra)
+    Keyword.merge(
+      [bb: %{robot: @robot, path: [:policy]}, policy: MockPolicy, policy_opts: [], rate: 50],
+      extra
+    )
   end
 
   describe "init/1" do
     test "initialises the policy and seeds loop state" do
       assert {:ok, state} = Controller.init(init_opts([]))
       assert state.robot == @robot
-      assert state.rate == 50
+      assert state.loop.clock == {:rate, 50.0}
       assert state.step == 0
     end
 

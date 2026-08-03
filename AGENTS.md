@@ -87,9 +87,12 @@ policy reaches its goal by returning `{:done, state}` from `act/2`.
 
 - **Namespace:** all modules under `BB.Policy.*`. App is `:bb_policy`; the
   MixProject module is `BB.Policy.MixProject`.
-- **Control loop:** schedule ticks with `Process.send_after(self(), :tick, ms)`
-  and reschedule from the `handle_info(:tick, …)` body. This mirrors
-  `BB.PID.Controller`. Do **not** use `:timer.send_interval` (no backpressure).
+- **Control loop:** use `BB.Loop`. Build it with `BB.Loop.new/2`, `arm/1` it
+  once, then call `BB.Loop.tick/1` at the top of `handle_info(:tick, …)` — it
+  re-arms itself, so never schedule a tick by hand. It schedules against an
+  absolute deadline and drops whole missed periods, so an overrunning handler
+  can't produce a burst of catch-up inferences. Do **not** use
+  `:timer.send_interval` (no backpressure, and it queues missed ticks).
 - **Safety is not optional.** Check `BB.Safety.armed?/1` before applying any
   command in the loop. A mid-episode disarm halts the episode — it is a safety
   intervention, not a retryable error. Never construct a code path that drives
