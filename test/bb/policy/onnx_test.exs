@@ -29,7 +29,7 @@ defmodule BB.Policy.ONNXTest do
   ]
 
   defp robot_state_with(positions) do
-    stub(BB.Robot.State, :get_all_positions, fn _ -> positions end)
+    stub(BB.Robot.State, :get_all_configurations, fn _ -> positions end)
     %{}
   end
 
