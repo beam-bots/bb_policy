@@ -379,7 +379,7 @@ defmodule BB.Policy.ONNX do
   end
 
   defp read_joints(robot_state, :positions, joints) do
-    all = RobotState.get_all_positions(robot_state)
+    all = RobotState.get_all_configurations(robot_state)
     Enum.map(joints, &Map.get(all, &1, 0.0))
   end
 
