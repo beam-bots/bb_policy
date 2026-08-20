@@ -7,6 +7,8 @@ defmodule BB.Policy.RunnerTest do
 
   use Mimic
 
+  alias BB.Error.State.NotArmed
+  alias BB.Message.Actuator.Command
   alias BB.Policy.Runner
   alias BB.Policy.Support.MockPolicy
 
@@ -93,6 +95,18 @@ defmodule BB.Policy.RunnerTest do
       assert {:error, {:action_conversion, :boom}} =
                Runner.run(@robot, MockPolicy, %{},
                  policy_opts: [fail_commands: true],
+                 rate_hz: 200,
+                 timeout: :timer.seconds(5)
+               )
+    end
+
+    test "ends the episode when an actuator refuses a command" do
+      refusal = NotArmed.exception(actuator: :servo, command: Command.Position)
+      stub(BB.Actuator, :set_position, fn @robot, _path, _value, _opts -> {:error, refusal} end)
+
+      assert {:error, {:actuator, ^refusal}} =
+               Runner.run(@robot, MockPolicy, %{},
+                 policy_opts: [path: [:shoulder, :servo]],
                  rate_hz: 200,
                  timeout: :timer.seconds(5)
                )

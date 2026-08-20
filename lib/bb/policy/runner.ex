@@ -44,7 +44,8 @@ defmodule BB.Policy.Runner do
 
   `run/4` blocks until the episode ends and returns `{:ok, reason}` where
   `reason` is `:completed`, `:timeout`, or `:disarmed`; or `{:error, term}` if
-  the policy fails to initialise or an action conversion errors.
+  the policy fails to initialise, an action conversion errors, or an actuator
+  refuses a command.
 
   > #### Public API note {: .info}
   >

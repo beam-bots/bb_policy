@@ -17,14 +17,17 @@ defprotocol BB.Policy.Effect do
   publishing a message, issuing a sub-command, toggling an indicator — by
   defining a struct and `defimpl BB.Policy.Effect`.
 
-  Implementations apply the effect for its side-effect and return `:ok`. The
-  safety gate is the caller's responsibility: `BB.Policy.Step` only applies
-  effects while `BB.Safety.armed?/1`.
+  Implementations apply the effect for its side-effect and return `:ok`, or
+  `{:error, reason}` if whatever they drove refused. `BB.Policy.Step` ends the
+  tick on the first refusal. The safety gate is the caller's responsibility:
+  `BB.Policy.Step` only applies effects while `BB.Safety.armed?/1`.
   """
 
   @doc """
-  Apply this effect to `robot`. Returns `:ok`.
+  Apply this effect to `robot`.
+
+  Returns `:ok`, or `{:error, reason}` if the effect was refused.
   """
-  @spec apply(t(), robot :: module()) :: :ok
+  @spec apply(t(), robot :: module()) :: :ok | {:error, term()}
   def apply(effect, robot)
 end
