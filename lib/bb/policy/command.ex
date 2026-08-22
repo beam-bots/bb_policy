@@ -64,6 +64,7 @@ defmodule BB.Policy.Command do
 
     * `{:ok, :completed}` — the policy returned `{:done, state}` from `act/2`.
     * `{:error, {:action_conversion, reason}}` — an action failed to convert.
+    * `{:error, {:actuator, reason}}` — an actuator refused a command.
     * exit `:timeout` — the command's timeout elapsed (→ `{:error, :timeout}`
       to awaiters).
     * exit `:disarmed` — the safety system disarmed mid-episode (a `bb_reactor`

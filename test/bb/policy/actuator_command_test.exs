@@ -7,6 +7,8 @@ defmodule BB.Policy.ActuatorCommandTest do
 
   use Mimic
 
+  alias BB.Error.State.NotArmed
+  alias BB.Message.Actuator.Command
   alias BB.Policy.ActuatorCommand
   alias BB.Policy.Effect
 
@@ -51,6 +53,14 @@ defmodule BB.Policy.ActuatorCommandTest do
       assert_received {:eff, [:c], 3.0, []}
       assert_received {:hold, [:servo], []}
       assert_received {:stop, [:c], []}
+    end
+
+    test "returns the actuator's refusal for a position command" do
+      refusal = NotArmed.exception(actuator: :servo, command: Command.Position)
+      stub(BB.Actuator, :set_position, fn @robot, _p, _v, _o -> {:error, refusal} end)
+
+      assert {:error, ^refusal} =
+               ActuatorCommand.apply(ActuatorCommand.position(:servo, 1.0), @robot)
     end
   end
 

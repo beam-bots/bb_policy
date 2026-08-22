@@ -48,6 +48,7 @@ defmodule BB.Policy.Support.ReactorRobot do
         end
 
         actuator(:a_servo, BB.Sim.Actuator)
+        sensor(:a_position, {BB.Sensor.OpenLoopPositionEstimator, actuator: :a_servo})
         link(:tip)
       end
     end

@@ -26,7 +26,8 @@ defmodule BB.Policy.ActuatorCommand do
     * `:value` — the numeric setpoint, in SI units (radians, rad/s, N·m). Unused
       (and may be `nil`) for `:hold`/`:stop`.
     * `:opts` — extra options forwarded to the `BB.Actuator` call (e.g.
-      `velocity:` for a position command). Defaults to `[]`.
+      `velocity:` for a position command, or `timeout:`/`delivery:` for a
+      position command's round trip). Defaults to `[]`.
 
   ## Example
 
@@ -88,12 +89,19 @@ defmodule BB.Policy.ActuatorCommand do
   @doc """
   Apply this command to `robot` via the corresponding `BB.Actuator` call.
 
-  Returns `:ok`. Commands are delivered over PubSub (`BB.Actuator.*`) so they are
-  logged and replayable; the safety gate is the caller's responsibility
-  (`BB.Policy.Step` only applies effects while armed). Also reachable through the
+  Commands are delivered over PubSub (`BB.Actuator.*`) so they are logged and
+  replayable; the safety gate is the caller's responsibility (`BB.Policy.Step`
+  only applies effects while armed). Also reachable through the
   `BB.Policy.Effect` protocol.
+
+  Returns `:ok`, or `{:error, %BB.Error{}}` if the actuator refused. Only
+  `:position` can refuse: `BB.Actuator.set_position/4` waits for the actuator to
+  accept the command, so a `:position` command blocks for a round trip and exits
+  the caller if the actuator doesn't answer inside its timeout. A policy whose
+  tick budget can't afford that puts `timeout:` or `delivery: :direct` in
+  `:opts` — `:direct` casts, and so can never report a refusal.
   """
-  @spec apply(t(), robot :: module()) :: :ok
+  @spec apply(t(), robot :: module()) :: :ok | {:error, term()}
   def apply(%__MODULE__{} = command, robot) do
     path = List.wrap(command.path)
 

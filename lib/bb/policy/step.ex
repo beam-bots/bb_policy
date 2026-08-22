@@ -29,6 +29,9 @@ defmodule BB.Policy.Step do
     * `{:disarmed, policy_state}` — the robot was disarmed between entry and
       apply (a mid-inference safety intervention); no effect was applied.
     * `{:error, {:action_conversion, reason}}` — `action_to_commands/3` failed.
+    * `{:error, {:actuator, reason}}` — an effect was refused. Every effect of
+      the tick is still applied: a half-commanded robot is worse than a
+      fully-commanded one whose first joint said no.
   """
 
   alias BB.Policy.Effect
@@ -38,7 +41,7 @@ defmodule BB.Policy.Step do
           {:done, BB.Policy.state()}
           | {:applied, BB.Policy.state(), %{inference_duration: integer()}}
           | {:disarmed, BB.Policy.state()}
-          | {:error, {:action_conversion, term()}}
+          | {:error, {:action_conversion, term()} | {:actuator, term()}}
 
   @doc """
   Run one control step for `policy_module` against `robot`.
@@ -70,14 +73,25 @@ defmodule BB.Policy.Step do
         # apply this tick's effects. The caller already gated entry; this closes
         # the window between that check and the apply.
         if BB.Safety.armed?(robot) do
-          Enum.each(commands, &Effect.apply(&1, robot))
-          {:applied, policy_state, %{inference_duration: duration}}
+          applied(commands, robot, policy_state, duration)
         else
           {:disarmed, policy_state}
         end
 
       {:error, reason} ->
         {:error, {:action_conversion, reason}}
+    end
+  end
+
+  defp applied(commands, robot, policy_state, duration) do
+    refusal =
+      commands
+      |> Enum.map(&Effect.apply(&1, robot))
+      |> Enum.find(&match?({:error, _}, &1))
+
+    case refusal do
+      nil -> {:applied, policy_state, %{inference_duration: duration}}
+      {:error, reason} -> {:error, {:actuator, reason}}
     end
   end
 end
