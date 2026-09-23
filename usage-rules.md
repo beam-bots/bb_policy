@@ -113,8 +113,10 @@ placeholders for the model path and joints.
 - **Don't declare a controller and expect it to run in simulation.** `controller`
   defaults to `simulation: :omit`, so a policy controller does *nothing* under
   `:kinematic`/`:mock` sim unless you set `simulation: :start`.
-- **Don't forget `{:ortex, "~> 0.1"}` in your deps.** It is optional here and not
-  pulled in transitively; without it `BB.Policy.ONNX.init/1` errors out.
+- **Don't forget `{:ortex, "~> 0.1"}` in your deps.** It is not declared here at
+  all and so is never pulled in transitively; without it `BB.Policy.ONNX.init/1`
+  errors out. Every published `ortex` requires `nx ~> 0.6`, so adding it caps
+  your whole project at nx 0.x — ONNX inference and nx 1.0 can't coexist yet.
 - **Don't use `observation_keys:`/`action_keys:`.** The real ONNX options are the
   ordered `:observation`/`:action` specs above.
 
