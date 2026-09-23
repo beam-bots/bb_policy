@@ -94,9 +94,8 @@ defmodule BB.Policy.MixProject do
   defp deps do
     [
       {:bb, bb_dep("~> 0.30")},
-      {:nx, "~> 0.12"},
+      {:nx, "~> 0.12 or ~> 1.0"},
       {:telemetry, "~> 1.0"},
-      ortex_dep(),
 
       # bb_reactor is an optional integration point (BB.Policy.Command is usable
       # as a reactor step); pulled in for tests only so we can exercise that.
@@ -112,7 +111,7 @@ defmodule BB.Policy.MixProject do
       {:mimic, "~> 2.2", only: :test, runtime: false},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:usage_rules, "~> 1.2", only: [:dev], runtime: false}
-    ]
+    ] ++ ortex_deps()
   end
 
   defp elixirc_paths(env) when env in [:dev, :test], do: ["lib", "test/support"]
@@ -128,15 +127,17 @@ defmodule BB.Policy.MixProject do
   end
 
   # ortex compiles a Rust NIF (and downloads an onnxruntime binary), so it needs
-  # a Rust toolchain. It is published as an optional dependency — consumers opt
-  # in — but is only fetched into *this* repo's build when ORTEX=1, so day-to-day
-  # development and CI don't require Rust. BB.Policy.ONNX guards on its presence
-  # at runtime via Code.ensure_loaded?/1.
-  defp ortex_dep do
+  # a Rust toolchain, and every published version caps nx at 0.x. Declaring it
+  # at all — even scoped to an env that never exists — puts that ceiling into
+  # dependency resolution, which makes this package unresolvable against a `bb`
+  # on nx 1.0. So it is only declared when ORTEX=1. Consumers who want ONNX
+  # inference add `{:ortex, "~> 0.1"}` themselves; BB.Policy.ONNX guards on its
+  # presence at runtime via Code.ensure_loaded?/1.
+  defp ortex_deps do
     if System.get_env("ORTEX") in ~w(1 true) do
-      {:ortex, "~> 0.1", optional: true}
+      [{:ortex, "~> 0.1", optional: true}]
     else
-      {:ortex, "~> 0.1", optional: true, only: :__ortex_disabled__}
+      []
     end
   end
 end
