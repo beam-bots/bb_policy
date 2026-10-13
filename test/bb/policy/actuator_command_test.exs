@@ -34,7 +34,7 @@ defmodule BB.Policy.ActuatorCommandTest do
   end
 
   describe "apply/2" do
-    test "dispatches each kind to the matching BB.Actuator call, wrapping a bare path" do
+    test "dispatches each kind to the matching BB.Actuator call, passing the path through" do
       parent = self()
       stub(BB.Actuator, :set_position, fn @robot, p, v, o -> send(parent, {:pos, p, v, o}) end)
       stub(BB.Actuator, :set_velocity, fn @robot, p, v, o -> send(parent, {:vel, p, v, o}) end)
@@ -48,10 +48,10 @@ defmodule BB.Policy.ActuatorCommandTest do
       ActuatorCommand.apply(ActuatorCommand.hold(:servo), @robot)
       ActuatorCommand.apply(ActuatorCommand.stop([:c]), @robot)
 
-      assert_received {:pos, [:servo], 1.0, [velocity: 2.0]}
+      assert_received {:pos, :servo, 1.0, [velocity: 2.0]}
       assert_received {:vel, [:a, :b], 0.5, []}
       assert_received {:eff, [:c], 3.0, []}
-      assert_received {:hold, [:servo], []}
+      assert_received {:hold, :servo, []}
       assert_received {:stop, [:c], []}
     end
 
@@ -71,7 +71,7 @@ defmodule BB.Policy.ActuatorCommandTest do
 
       Effect.apply(ActuatorCommand.position(:servo, 1.0), @robot)
 
-      assert_received {:pos, [:servo], 1.0, []}
+      assert_received {:pos, :servo, 1.0, []}
     end
   end
 end

@@ -15,9 +15,9 @@ defmodule BB.Policy.ActuatorCommand do
 
   ## Fields
 
-    * `:path` — the actuator's path in the robot topology, e.g.
-      `[:shoulder_pan, :shoulder_pan_servo]`. A bare atom is accepted and
-      wrapped as a single-element path.
+    * `:path` — the actuator's name, e.g. `:shoulder_pan_servo`, or its full
+      path from the robot's root link, e.g.
+      `[:base_link, :shoulder_pan, :shoulder_pan_servo]`.
     * `:kind` — the verb:
       * `:position` / `:velocity` / `:effort` — drive to a numeric setpoint
         (`BB.Actuator.set_position/velocity/effort`).
@@ -32,7 +32,7 @@ defmodule BB.Policy.ActuatorCommand do
   ## Example
 
       %BB.Policy.ActuatorCommand{
-        path: [:shoulder_pan, :shoulder_pan_servo],
+        path: :shoulder_pan_servo,
         kind: :position,
         value: 0.5,
         opts: [velocity: 1.0]
@@ -102,9 +102,7 @@ defmodule BB.Policy.ActuatorCommand do
   `:opts` — `:direct` casts, and so can never report a refusal.
   """
   @spec apply(t(), robot :: module()) :: :ok | {:error, term()}
-  def apply(%__MODULE__{} = command, robot) do
-    path = List.wrap(command.path)
-
+  def apply(%__MODULE__{path: path} = command, robot) do
     case command.kind do
       :position -> BB.Actuator.set_position(robot, path, command.value, command.opts)
       :velocity -> BB.Actuator.set_velocity(robot, path, command.value, command.opts)
