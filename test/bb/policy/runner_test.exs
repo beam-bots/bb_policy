@@ -7,6 +7,7 @@ defmodule BB.Policy.RunnerTest do
 
   use Mimic
 
+  alias BB.Error.State.CommandPending
   alias BB.Error.State.NotArmed
   alias BB.Message.Actuator.Command
   alias BB.Policy.Runner
@@ -105,6 +106,25 @@ defmodule BB.Policy.RunnerTest do
       stub(BB.Actuator, :set_position, fn @robot, _path, _value, _opts -> {:error, refusal} end)
 
       assert {:error, {:actuator, ^refusal}} =
+               Runner.run(@robot, MockPolicy, %{},
+                 policy_opts: [path: [:shoulder, :servo]],
+                 rate_hz: 200,
+                 timeout: :timer.seconds(5)
+               )
+    end
+
+    test "ends the episode when an actuator doesn't answer a command in time" do
+      pending =
+        CommandPending.exception(
+          robot: @robot,
+          actuator: :servo,
+          command: Command.Position,
+          timeout_ms: 50
+        )
+
+      stub(BB.Actuator, :set_position, fn @robot, _path, _value, _opts -> {:error, pending} end)
+
+      assert {:error, {:actuator, ^pending}} =
                Runner.run(@robot, MockPolicy, %{},
                  policy_opts: [path: [:shoulder, :servo]],
                  rate_hz: 200,

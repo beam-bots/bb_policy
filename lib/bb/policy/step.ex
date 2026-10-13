@@ -29,7 +29,8 @@ defmodule BB.Policy.Step do
     * `{:disarmed, policy_state}` — the robot was disarmed between entry and
       apply (a mid-inference safety intervention); no effect was applied.
     * `{:error, {:action_conversion, reason}}` — `action_to_commands/3` failed.
-    * `{:error, {:actuator, reason}}` — an effect was refused. Every effect of
+    * `{:error, {:actuator, reason}}` — an effect was refused or not answered
+      in time (`BB.Error.State.CommandPending`). Every effect of
       the tick is still applied: a half-commanded robot is worse than a
       fully-commanded one whose first joint said no.
   """
