@@ -45,7 +45,8 @@ defmodule BB.Policy.ONNX do
       commands, where `kind` is `:position`, `:velocity`, or `:effort` and `opts`
       may carry a `:key` (default `:action`). Columns are consumed left-to-right;
       entries sharing a `:key` are denormalised together; the joint name doubles
-      as the actuator path (wrap in a list for a nested path).
+      as the actuator name (or give a list holding the actuator's full path
+      from the root link).
     * `:normalizer` — a `BB.Policy.Normalizer` struct, or a path to its JSON.
       Observation entries are normalised, and action entries denormalised, under
       their `:key` (default `:observation`/`:action`). Use explicit keys to match

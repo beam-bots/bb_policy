@@ -28,7 +28,7 @@ defmodule BB.Policy.Support.ReactorRobot do
     command :pick do
       handler(
         {BB.Policy.Command,
-         policy: MockPolicy, policy_opts: [done_after: 2, path: [:a, :a_servo]], rate_hz: 1000}
+         policy: MockPolicy, policy_opts: [done_after: 2, path: :a_servo], rate_hz: 1000}
       )
 
       allowed_states([:idle])
