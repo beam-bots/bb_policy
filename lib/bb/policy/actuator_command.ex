@@ -17,7 +17,8 @@ defmodule BB.Policy.ActuatorCommand do
 
     * `:path` — the actuator's name, e.g. `:shoulder_pan_servo`, or its full
       path from the robot's root link, e.g.
-      `[:base_link, :shoulder_pan, :shoulder_pan_servo]`.
+      `[:base_link, :shoulder_pan, :shoulder_pan_servo]`. A list that isn't the
+      full path raises `ArgumentError` when the command is applied.
     * `:kind` — the verb:
       * `:position` / `:velocity` / `:effort` — drive to a numeric setpoint
         (`BB.Actuator.set_position/velocity/effort`).
@@ -94,12 +95,15 @@ defmodule BB.Policy.ActuatorCommand do
   only applies effects while armed). Also reachable through the
   `BB.Policy.Effect` protocol.
 
-  Returns `:ok`, or `{:error, %BB.Error{}}` if the actuator refused. Only
-  `:position` can refuse: `BB.Actuator.set_position/4` waits for the actuator to
-  accept the command, so a `:position` command blocks for a round trip and exits
-  the caller if the actuator doesn't answer inside its timeout. A policy whose
-  tick budget can't afford that puts `timeout:` or `delivery: :direct` in
-  `:opts` — `:direct` casts, and so can never report a refusal.
+  Returns `:ok`, or `{:error, %BB.Error{}}` if the actuator refused, didn't
+  answer, or isn't running. Only `:position` can return an error:
+  `BB.Actuator.set_position/4` waits for the actuator to accept the command, so
+  a `:position` command blocks for a round trip. An actuator that doesn't answer
+  inside the timeout returns `BB.Error.State.CommandPending` — the command is
+  still queued and will most likely be applied late — and one that isn't
+  running returns `BB.Error.State.ActuatorNotRunning`. A policy whose tick
+  budget can't afford the round trip puts `timeout:` or `delivery: :direct` in
+  `:opts` — `:direct` casts, and so can never report an error.
   """
   @spec apply(t(), robot :: module()) :: :ok | {:error, term()}
   def apply(%__MODULE__{path: path} = command, robot) do

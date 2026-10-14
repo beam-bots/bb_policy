@@ -45,7 +45,9 @@ defmodule BB.Policy.Runner do
   `run/4` blocks until the episode ends and returns `{:ok, reason}` where
   `reason` is `:completed`, `:timeout`, or `:disarmed`; or `{:error, term}` if
   the policy fails to initialise, an action conversion errors, or an actuator
-  refuses a command.
+  refuses or doesn't answer a command. An actuator that doesn't answer in time
+  ends the episode with `{:error, {:actuator, %BB.Error.State.CommandPending{}}}`,
+  even though the command is still queued and will most likely be applied.
 
   > #### Public API note {: .info}
   >

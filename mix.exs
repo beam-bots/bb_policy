@@ -93,7 +93,7 @@ defmodule BB.Policy.MixProject do
 
   defp deps do
     [
-      {:bb, bb_dep("~> 0.30")},
+      {:bb, bb_dep("~> 0.33")},
       {:nx, "~> 0.12 or ~> 1.0"},
       {:telemetry, "~> 1.0"},
 
