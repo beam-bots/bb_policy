@@ -5,6 +5,12 @@ SPDX-FileCopyrightText: 2026 Edgar Gomes de Araujo <talktoedgar@gmail.com>
 SPDX-License-Identifier: Apache-2.0
 -->
 
+# This project is archived
+
+As the framework evolves sometimes we find that early ideas about what abstractions should look like no longer feel like the right fit.  Unfortunately, `bb_policy` is one of them.
+
+If you're looking for vision models take a look at `bb_camera` and it's related features.  For actual movement models, etc, this will have to arrive later.
+
 # BB.Policy
 
 [![CI](https://github.com/beam-bots/bb_policy/actions/workflows/ci.yml/badge.svg)](https://github.com/beam-bots/bb_policy/actions/workflows/ci.yml)
